@@ -1,0 +1,76 @@
+version: "3.8"
+
+services:
+  data_gen:
+    build: .
+    container_name: bandit_data_gen
+    working_dir: /app/data
+    command: bash -lc "python data_generation.py"
+    volumes:
+      - ./:/app:rw
+      - ./data:/app/data:rw
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: "no"
+  
+  main_worker:
+    build: .
+    container_name: bandit_main_worker
+    working_dir: /app
+    command: bash -lc "./wait_for_synthetic.sh && python main.py"
+    volumes:
+      - ./:/app:rw
+      - ./data:/app/data:rw
+      - ./obd:/app/obd:rw
+    
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WAIT_TIMEOUT=1500
+    depends_on:
+      - data_gen
+    restart: "no"
+  
+  obd_worker:
+    build: .
+    container_name: bandit_obd_worker
+    working_dir: /app
+    command: bash -lc "python obd_pipeline.py"
+    volumes:
+      - ./:/app:rw
+      - ./data:/app/data:rw
+      - ./obd:/app/obd:rw
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: "no"
+  
+  streamlit:
+    build: .
+    container_name: bandit_streamlit
+    working_dir: /app
+    command: bash -lc " chmod +x ./wait_for_synthetic.sh && streamlit run app.py --server.port 8501 --server.address 0.0.0.0"
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./:/app:rw
+      - ./data:/app/data:rw
+      - ./obd:/app/obd:rw
+    environment:
+      - PYTHONUNBUFFERED=1
+      - STREAMLIT_SERVER_HEADLESS = true
+      - STREAMLIT_SERVER_ENABLECORS = false
+      - WAIT_TIMEOUT=1500
+    depends_on:
+      - data_gen
+      - main_worker
+      - obd_worker
+    restart: "unless-stopped"
+    healthcheck:
+      test: ["CMD", "curl","-f","http://127.0.0.1:8501/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+networks:
+  default:
+    driver: bridge
+
+

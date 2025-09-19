@@ -1,0 +1,93 @@
+# impatient_contextual/contextual_bandit.py
+import numpy as np
+from .contextual_model import BayesianLinearModel
+
+class ContextualBayesianBandit:
+    """
+    Contextual bandit that combines per-arm:
+      - ProgressiveBelief (trace-based posterior over stickiness scalar)
+      - BayesianLinearModel (context -> scalar reward)
+    Selection (Thompson-style): for each arm sample theta and a progressive belief draw,
+    compute combined score = theta^T x + pb_weight * pb_sample, pick argmax.
+    """
+
+    def __init__(self, beliefs, dim, alpha=1.0, sigma2=0.25, pb_weight=1.0, seed=None):
+        """
+        beliefs: dict mapping arm -> ProgressiveBelief (or other belief class)
+        dim: context dimension (including intercept)
+        """
+        self.beliefs = beliefs
+        self.arms = list(beliefs.keys())
+        self.models = {a: BayesianLinearModel(dim, alpha=alpha, sigma2=sigma2) for a in self.arms}
+        self.pb_weight = pb_weight
+        self.t = 0
+        self.rng = np.random.default_rng(seed)
+
+    def act(self, context, n_actions=1, admissible=None):
+        if admissible is None:
+            admissible = self.arms
+        actions = []
+        for _ in range(n_actions):
+            # sample per-arm value
+            values = []
+            for a in admissible:
+                # sample theta
+                theta = self.models[a].sample_theta()
+                pred = float(theta @ context)
+                # sample progressive belief
+                pb = 0.0 
+                try:
+                    pb = self.beliefs[a].sample_from_posterior(self.t)
+                except Exception:
+                    pb = 0.0
+                values.append(pred + self.pb_weight * pb)
+            idx = int(np.argmax(values))
+            actions.append(admissible[idx])
+        return actions
+
+    def update(self, item, traces, context):
+        """traces: array-like (w,) or (n, w)
+           context: vector (dim,)
+        """
+        # 1) Update progressive belief with traces
+        try:
+            self.beliefs[item].update(traces, self.t)
+        except Exception:
+            pass
+
+        # 2) Convert traces -> scalar reward(s) and update context model
+        traces = np.atleast_2d(traces)
+        rewards = 1.0 + traces.sum(axis=1)  # scalar long-term reward proxy
+        for r in rewards:
+            self.models[item].update(context, float(r))
+
+    def step(self):
+        self.t += 1
+    
+    def greedy_action(self,context,admissible=None):
+        """
+        Deterministic evaluation policy:
+        use posterior means ( no thompson sampling)
+        Score= E[theta]^T x + pb_weight*E[pb| data up to self.t]   
+        """
+        if admissible is None:
+            admissible = self.arms
+        values=[]
+        for a in admissible:
+            theta_mean = self.models[a].posterior_mean
+            pred=float(theta_mean @ context)
+            pb_mean=0.0
+            try:
+                bel = self.beliefs[a]
+                if bel.has_new_obs or bel.t != getattr(bel,"t_post",-1):
+                    bel.compute_posterior(self.t)
+                
+                pb_mean = float(bel.mean)
+            
+            except Exception:
+                pass
+            values.append(pred+self.pb_weight*pb_mean)
+        
+        return admissible[int(np.argmax(values))]
+
+        

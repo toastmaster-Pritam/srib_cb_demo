@@ -1,0 +1,4 @@
+/data/*.pkl
+/impatient_bandits/__pycache__/
+*.pkl
+__pycache__
