@@ -1,246 +1,240 @@
-SRIB — Contextual Bandit Demo (Dockerized)
+# SRIB — Contextual Bandit Demo (Dockerized)
 
-Lightweight demo / prototype that reproduces a Spotify-style impatient bandits pipeline and demonstrates a contextual-bandit experiment + a small UI.
-This repository contains synthetic-data generation, the bandit training worker, an OBD pipeline worker, and a Streamlit UI — all orchestrated by docker-compose.
-
+Lightweight demo that reproduces a Spotify-style *impatient bandits* experiment pipeline.  
+It demonstrates contextual-bandit training, evaluation, and visualization using synthetic data.  
+All components are orchestrated with Docker Compose.
 
 ---
 
-Quick start (Docker Compose)
+## 🧩 Project Overview
 
-Prerequisites:
+This project consists of four main services:
 
-Docker & Docker Compose (v1.27+ or Compose V2)
+1. **data_gen** → Generates synthetic campaign data and stores it in `/data`.
+2. **main_worker** → Trains contextual bandit models using the generated data.
+3. **obd_worker** → Processes offline bandit diagnostics (OBD) and stores artifacts in `/obd`.
+4. **streamlit** → Launches a Streamlit dashboard to visualize and interact with results.
 
-At least ~4GB free disk and enough RAM if you run all services
+Each service runs inside its own Docker container and shares data through mounted volumes.
 
-Recommended Python environment for local dev: 3.10+ (the container image uses the repo dockerfile)
+---
 
+## 🚀 Quick Start
 
-Start everything (recommended):
+### Prerequisites
+- **Docker** and **Docker Compose v2+**
+- Minimum **4GB RAM** and **2GB disk space**
+- Internet access to pull required dependencies
 
-# from repo root
+### Steps to Run
+```bash
+# Clone the repository
+git clone https://github.com/toastmaster-Pritam/srib_cb_demo.git
+cd srib_cb_demo
+
+# Build and start all services
 docker compose up --build
 
-This will:
+This command will:
 
-1. Run data_gen service (container bandit_data_gen) which executes python data_generation.py to build the synthetic dataset and write to ./data.
-
-
-2. Once the data is created, main_worker (bandit_main_worker) starts and runs python main.py (it waits for the synthetic dataset using wait_for_synthetic.sh).
+1. Run data_gen to create synthetic campaign datasets (.pkl files) under ./data/.
 
 
-3. obd_worker runs python obd_pipeline.py to process generated artifacts into ./obd.
+2. Start main_worker after data is ready to train the bandit models.
 
 
-4. streamlit runs streamlit run app.py exposing a small UI at http://localhost:8501.
+3. Run obd_worker to process offline bandit diagnostics.
 
 
+4. Launch streamlit UI on http://localhost:8501.
 
-If you prefer to run services individually (helpful for debugging), start them in sequence:
-
-# generate data
-docker compose run --rm data_gen
-
-# start main worker (after data is ready)
-docker compose run --rm main_worker
-
-# start obd worker (in a different terminal)
-docker compose run --rm obd_worker
-
-# or start UI
-docker compose run --service-ports streamlit
-# then open: http://localhost:8501
-
-Stop / tear down:
-
-docker compose down
-
-
----
-
-What each service does
-
-docker-compose.yml defines four services:
-
-data_gen (container bandit_data_gen)
-
-Command: python data_generation.py
-
-Purpose: create synthetic campaign / show traces (pickles) and save them under ./data (e.g. synthetic-data-train.pkl, synthetic-data-eval.pkl or your modified campaign filenames).
-
-Mounts: repository root and ./data for output.
-
-Runs once (restart: "no").
-
-
-main_worker (container bandit_main_worker)
-
-Command: ./wait_for_synthetic.sh && python main.py
-
-Purpose: orchestrates experiments / runs bandit evaluation (your run_contextual_eval.py / main.py style code), saves trained agents & metrics under ./data (or configured artifact paths).
-
-Depends on data_gen and uses wait_for_synthetic.sh to avoid race conditions.
-
-Mounts ./obd to save processed outputs if relevant.
-
-
-obd_worker (container bandit_obd_worker)
-
-Command: python obd_pipeline.py
-
-Purpose: post-process outputs (e.g., compute offline metrics, convert artifacts to OBD format, produce dashboards-ready files) and save to ./obd.
-
-Runs once; used for offline analytics artifacts.
-
-
-streamlit (container bandit_streamlit)
-
-Command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0
-
-Purpose: UI to explore results and interactively query a trained bandit (if UI code supports it). Exposes port 8501.
-
-Healthcheck tries to curl the service.
 
 
 
 ---
 
-Project layout & important files
+🧠 What Each Service Does
 
-(Your screenshot / repo includes these — quick mapping)
+🧩 data_gen
 
-./admin_ui/                # (optional) admin UI assets
-./data/                    # generated pickles & artifacts (mounted volume)
-./impatient_bandits/       # Spotify-style library / belief/model code
-./obd/random/all/          # sample OBD outputs
-api.py                     # REST wrapper / small API (if present)
-app.py                     # Streamlit web UI
-docker-compose.yml         # orchestration (you pasted earlier)
-dockerfile                 # docker image build instructions
-main.py                    # main orchestration / worker entry-point
-model_service.py           # model-serving helper / wrappers
-obd_pipeline.py            # OBD post-processing pipeline
-requirements.txt           # python deps
-run_uvicorn.sh             # run server (if needed)
-test.py                    # tests / sanity checks
-wait_for_artifacts.sh      # helper for waiting on artifacts
-wait_for_synthetic.sh      # helper for waiting on synthetic-data generation
+Runs python data_generation.py
+
+Generates 600 synthetic campaigns, each with 10,000 traces of 59-day time-series data.
+
+Saves:
+
+data/synthetic-data-campaign-train.pkl
+
+data/synthetic-data-campaign-eval.pkl
 
 
----
 
-Where outputs are saved
+⚙️ main_worker
 
-./data/ — synthetic datasets, trained agents, evaluation CSVs, pickles, plots. This folder is mounted into containers so you can see results on the host.
+Runs ./wait_for_synthetic.sh && python main.py
 
-./obd/ — processed artifacts (optional) created by obd_pipeline.py.
+Waits for synthetic data, then trains a contextual bandit model per belief.
+
+Saves trained models in ./data/.
 
 
-Typical output filenames (examples used in code):
+🧾 obd_worker
 
-data/synthetic-data-train.pkl
+Runs python obd_pipeline.py
 
-data/synthetic-data-eval.pkl
+Processes model outputs, computes diagnostics, and writes to ./obd/.
 
-data/trained_agent_<Belief>_n<...>.pkl
 
-data/synthetic-data-eval.png (plots)
+📊 streamlit
 
-obd/* — OBD JSON/CSV artifacts.
+Runs streamlit run app.py --server.port 8501
+
+Hosts a Streamlit UI to visualize model performance and diagnostics.
+
+Accessible at http://localhost:8501
 
 
 
 ---
 
-How to inspect a saved trained model (quick)
+🗂️ Repository Structure
 
-After a run, trained bandit pickles are in ./data/ (filename pattern trained_agent_<name>_n<...>.pkl). Example usage (host, or inside a Python container):
+.
+├── admin_ui/                 # Optional admin interface
+├── data/                     # Generated pickle data (mounted volume)
+├── impatient_bandits/        # Bandit model definitions and utilities
+├── obd/random/all/           # Processed OBD results
+├── api.py                    # REST API endpoints
+├── app.py                    # Streamlit dashboard entry point
+├── docker-compose.yml        # Orchestration of all containers
+├── dockerfile                # Image build instructions
+├── main.py                   # Bandit training and evaluation logic
+├── model_service.py          # Model serving utilities
+├── obd_pipeline.py           # Offline diagnostics computation
+├── requirements.txt          # Python dependencies
+├── run_uvicorn.sh            # Optional API server runner
+├── test.py                   # Unit or integration tests
+├── wait_for_artifacts.sh     # Script to ensure artifacts exist
+├── wait_for_synthetic.sh     # Script to ensure synthetic data exists
+└── README.md
+
+
+---
+
+📁 Output Locations
+
+Type	Path	Description
+
+Synthetic data	./data/	Generated pickles for campaigns
+Trained models	./data/	Pickled contextual bandit models
+OBD artifacts	./obd/	Processed analytics and visualizations
+
+
+Example saved files:
+
+data/synthetic-data-campaign-train.pkl
+
+data/synthetic-data-campaign-eval.pkl
+
+data/trained_agent_<Belief>.pkl
+
+obd/metrics_summary.json
+
+
+
+---
+
+🔍 Inspecting Saved Models
+
+Once training completes, you can test a trained model manually:
 
 import pickle, numpy as np
 
-fname = "data/trained_agent_Progressive_n10.pkl"
-with open(fname, "rb") as f:
+with open("data/trained_agent_Progressive.pkl", "rb") as f:
     agent = pickle.load(f)
 
-# Example context (intercept + features)
-ctx = np.array([1.0, 0.45, 1, 0.2, 0])
-action = agent.act(ctx, n_actions=1)[0]
+context = np.array([1.0, 0.45, 1, 0.2, 0])  # Example context
+action = agent.act(context, n_actions=1)[0]
 print("Recommended campaign:", action)
 
-Notes:
+> Note: Thompson sampling introduces randomness — the same context may yield slightly different actions.
 
-Ensure you load with the same codebase (same module/class paths) that was used to save the object, otherwise pickle may fail.
-
-The bandit uses Thompson sampling — repeated act() calls for the same context can be stochastic by design.
 
 
 
 ---
 
-How to get sample traces printed and pickled (developer)
+⚙️ Environment Variables
 
-data_generation.py or data_generation logic should:
+Variable	Description	Default
 
-1. Generate numpy arrays shaped (num_traces, dim) per campaign.
-
-
-2. Save as a dict: { "campaign-000": arr, ... } via pickle.dump.
-
-
-3. If you want to see sample rows while saving, add:
-
-
-
-with open("data/synthetic-data-campaign-train.pkl", "wb") as f:
-    pickle.dump(campaigns_dict, f)
-
-# print sample rows (host console)
-k = list(campaigns_dict.keys())[0]
-print(k, campaigns_dict[k].shape)
-print(campaigns_dict[k][:5, :10])  # first 5 traces, first 10 days
-
-
----
-
-Environment variables & tuning
-
-STREAMLIT_SERVER_HEADLESS, WAIT_TIMEOUT are set in the compose file. You can override via shell:
-
-
-export WAIT_TIMEOUT=300
-docker compose up --build
-
-data_gen may take time if m is large (10k traces × 600 campaigns). Reduce m for faster runs while debugging.
+WAIT_TIMEOUT	Max wait time (seconds) for synthetic data	1500
+STREAMLIT_SERVER_HEADLESS	Run Streamlit in headless mode	true
+STREAMLIT_SERVER_ENABLECORS	Disable CORS for Streamlit	false
 
 
 
 ---
 
-Troubleshooting & logs
+🧰 Useful Commands
 
-View container logs:
+Run individual services
 
+docker compose run --rm data_gen
+docker compose run --rm main_worker
+docker compose run --rm obd_worker
+docker compose run --service-ports streamlit
+
+Stop all containers
+
+docker compose down
+
+View logs
 
 docker compose logs -f data_gen
-docker compose logs -f bandit_main_worker
-docker compose logs -f bandit_obd_worker
-docker compose logs -f bandit_streamlit
+docker compose logs -f main_worker
+docker compose logs -f obd_worker
+docker compose logs -f streamlit
 
-If streamlit healthcheck fails, check port conflicts and set STREAMLIT_SERVER_HEADLESS=true properly in environment.
 
-If pickle unpickle fails, ensure your local Python imports mirror the container module names (same package/module path).
+---
 
-If train step hangs, inspect wait_for_synthetic.sh timeout value and the data/ files.
+⚠️ Troubleshooting
+
+Issue	Possible Cause	Fix
+
+streamlit fails to start	Port 8501 already in use	Change port in docker-compose.yml
+No data in /data folder	data_gen failed	Check docker compose logs data_gen
+Pickle load error	Different class path	Ensure same Python modules are used
+Long runtime	Large m=10,000 traces	Reduce m in data_generation.py for faster testing
 
 
 
 ---
 
-Development tips
+🧩 Development Notes
 
-For fast iteration, run data_gen with smaller m (like 500) while debugging models.
+To modify synthetic data scale, edit parameters in data_generation.py:
 
-Use docker compose run --rm <service> to run a single service interactively.
+dim = 59   # trace length
+n = 600    # number of campaigns
+m = 10000  # number of traces per campaign
 
-Mount a local Python venv and run main.py directly for step-by-step debugging without rebuilding the image.
+To view sample generated traces before saving, insert:
+
+print("Sample data:", data[0][:5, :10])
+
+You can experiment locally without Docker using:
+
+pip install -r requirements.txt
+python data_generation.py
+python main.py
+
+
+
+---
+
+🧾 License
+
+MIT License © 2025
+Maintained by toastmaster-Pritam
